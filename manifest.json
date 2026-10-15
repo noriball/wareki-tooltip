@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "和暦⇔西暦 変換",
   "version": "3.0.0",
-  "description": "ページ上で和暦・西暦を選択すると、変換結果をツールチップで表示し、クリックでコピーできます。",
+  "description": "和暦・西暦の日付を選択すると、変換結果と曜日をその場でツールチップ表示。クリックでコピー。改元年は両方の元号を併記。",
   "permissions": [],
   "background": {
     "service_worker": "background.js",
@@ -10,10 +10,19 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "all_frames": true,
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }
