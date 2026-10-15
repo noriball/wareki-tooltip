@@ -89,3 +89,25 @@ test('対象外テキストは null', () => {
   assert.equal(convert('こんにちは'), null);
   assert.equal(convert('12345'), null);
 });
+
+test('全角数字・全角記号・全角英字', () => {
+  assert.equal(v('令和６年３月１５日'), '2024年3月15日（金）');
+  assert.equal(v('２０２４年３月１５日'), '令和6年3月15日（金）');
+  assert.equal(v('２０２４／３／１５'), '令和6年3月15日（金）');
+  assert.equal(v('２０２４－０３－１５'), '令和6年3月15日（金）');
+  assert.equal(v('２０２４．３．１５'), '令和6年3月15日（金）');
+  assert.equal(v('Ｒ６'), '2024年');
+  assert.equal(v('ｈ３１'), '2019年');
+  assert.equal(v('平３'), '1991年');
+});
+
+test('㋿㍻㍼㍽㍾ の合字', () => {
+  assert.equal(v('㋿6年'), '2024年');
+  assert.equal(v('㍻３年'), '1991年');
+  assert.equal(v('㍼２０年８月１５日'), '1945年8月15日（水）');
+});
+
+test('全角でも不正値は拒否、ラベルは選択したままの表記', () => {
+  assert.ok(err('昭和７０年'));
+  assert.match(convert('令和６年').label, /^令和６年\s+→\s+2024年$/);
+});

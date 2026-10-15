@@ -137,6 +137,14 @@ function seirekiToWareki(t, year, month, day) {
   return { label: `${t}  →  ${value}`, value };
 }
 
+/**
+ * 全角英数・全角記号を半角に、㋿㍻㍼㍽㍾ を元号名に、各種ダッシュをハイフンに揃える。
+ * （NFKC で 2024→2024、Ｒ６→R6、／→/、．→.、㋿→令和 などになる）
+ */
+function normalize(s) {
+  return s.normalize('NFKC').replace(/[\u2010-\u2015\u2212\uFF0D\u30FC]/g, '-');
+}
+
 const num = (s) => (s === undefined ? undefined : parseInt(s, 10));
 
 /**
@@ -145,31 +153,32 @@ const num = (s) => (s === undefined ? undefined : parseInt(s, 10));
  * @returns {{label:string,value:string}|{error:string}|null}
  */
 export function convert(text) {
-  const t = text.trim();
+  const orig = text.trim();       // 表示用（選択したままの表記）
+  const t = normalize(orig);      // 解析用（全角→半角など）
   let m;
 
   // 漢字: 令和6年 / 令和6年3月 / 令和6年3月15日 / 令和元年 / 令和6
   m = t.match(/^(令和|平成|昭和|大正|明治)(元|\d{1,2})(?:年(?:(\d{1,2})月(?:(\d{1,2})日)?)?)?$/);
   if (m) {
     const y = m[2] === '元' ? 1 : num(m[2]);
-    return warekiToSeireki(t, eraByName(m[1]), y, num(m[3]), num(m[4]));
+    return warekiToSeireki(orig, eraByName(m[1]), y, num(m[3]), num(m[4]));
   }
 
   // 漢字1文字略記: 明20 / 昭10 / 平3 / 令6
   m = t.match(/^(明|昭|大|平|令)(\d{1,2})$/);
-  if (m) return warekiToSeireki(t, eraByKanji(m[1]), num(m[2]));
+  if (m) return warekiToSeireki(orig, eraByKanji(m[1]), num(m[2]));
 
   // アルファベット略記: R6 / H31 / S64 / T15 / M45
   m = t.match(/^([RrHhSsTtMm])(\d{1,2})$/);
-  if (m) return warekiToSeireki(t, eraByAlpha(m[1]), num(m[2]));
+  if (m) return warekiToSeireki(orig, eraByAlpha(m[1]), num(m[2]));
 
   // 西暦(漢字): 2024年 / 2024年3月 / 2024年3月15日
   m = t.match(/^(\d{4})年(?:(\d{1,2})月(?:(\d{1,2})日)?)?$/);
-  if (m) return seirekiToWareki(t, num(m[1]), num(m[2]), num(m[3]));
+  if (m) return seirekiToWareki(orig, num(m[1]), num(m[2]), num(m[3]));
 
   // 西暦(区切り): 2024/3 / 2024-3-15 / 2024.3.15
   m = t.match(/^(\d{4})[\/\-.](\d{1,2})(?:[\/\-.](\d{1,2}))?$/);
-  if (m) return seirekiToWareki(t, num(m[1]), num(m[2]), num(m[3]));
+  if (m) return seirekiToWareki(orig, num(m[1]), num(m[2]), num(m[3]));
 
   return null;
 }
