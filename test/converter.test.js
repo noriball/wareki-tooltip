@@ -111,3 +111,27 @@ test('全角でも不正値は拒否、ラベルは選択したままの表記',
   assert.ok(err('昭和７０年'));
   assert.match(convert('令和６年').label, /^令和６年\s+→\s+2024年$/);
 });
+
+test('異常入力: 長大文字列・非文字列・制御文字でも即座に null', () => {
+  const t0 = Date.now();
+  assert.equal(convert('9'.repeat(100000)), null);
+  assert.equal(convert('令和' + '1'.repeat(50000) + '年'), null);
+  assert.equal(convert(null), null);
+  assert.equal(convert(undefined), null);
+  assert.equal(convert({}), null);
+  assert.equal(convert('\u0000‮令和6年'), null);
+  assert.ok(Date.now() - t0 < 500);
+});
+
+test('ファジング: 例外を投げない・出力にHTML特殊文字を含まない', () => {
+  const chars = '令和平成昭和大正明治元年月日RHSTM0123456789０１２３４５６７８９/-.－／．<>&"\' ㋿㍻';
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 20000; i++) {
+    const n = 1 + Math.floor(rnd() * 14);
+    let s = '';
+    for (let j = 0; j < n; j++) s += chars[Math.floor(rnd() * chars.length)];
+    const r = convert(s);
+    if (r && r.value) assert.doesNotMatch(r.value, /[<>&"']/);
+  }
+});

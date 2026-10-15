@@ -32,8 +32,8 @@
     host = document.createElement('div');
     host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:0;left:0;';
     const root = host.attachShadow({ mode: 'closed' });
-    root.innerHTML = `
-      <style>
+    const style = document.createElement('style');
+    style.textContent = `
         .tip {
           position: fixed; width: max-content; max-width: 90vw; padding: 6px 10px;
           font: 13px/1.5 system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
@@ -45,9 +45,11 @@
         .tip.err { background: #8a5a00; cursor: default; white-space: normal; }
         .tip.done { background: #1a7f37; }
         .hint { margin-left: 8px; font-size: 11px; opacity: .65; }
-      </style>
-      <div class="tip" role="button"></div>`;
-    box = root.querySelector('.tip');
+      `;
+    box = document.createElement('div');
+    box.className = 'tip';
+    box.setAttribute('role', 'button');
+    root.append(style, box);
     // 選択を外さないよう mousedown を止める
     box.addEventListener('mousedown', (e) => e.preventDefault());
     box.addEventListener('click', onClick);
@@ -111,7 +113,9 @@
     }
   }
 
-  async function onClick() {
+  async function onClick(e) {
+    // ページ側スクリプトが合成した click ではクリップボードに書かない
+    if (!e.isTrusted) return;
     const value = box?.dataset.value;
     if (!value) return;
     const ok = await copy(value);

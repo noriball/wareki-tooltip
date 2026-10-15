@@ -153,6 +153,8 @@ const num = (s) => (s === undefined ? undefined : parseInt(s, 10));
  * @returns {{label:string,value:string}|{error:string}|null}
  */
 export function convert(text) {
+  // 想定外に長い入力は処理しない（選択は content.js 側でも25文字に制限している）
+  if (typeof text !== 'string' || text.length > 100) return null;
   const orig = text.trim();       // 表示用（選択したままの表記）
   const t = normalize(orig);      // 解析用（全角→半角など）
   let m;
