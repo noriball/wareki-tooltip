@@ -1,15 +1,17 @@
 {
   "manifest_version": 3,
   "name": "和暦⇔西暦 変換",
-  "version": "2.0.0",
-  "permissions": ["contextMenus", "scripting", "activeTab"],
+  "version": "2.1.0",
+  "permissions": ["contextMenus", "offscreen"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
+      "all_frames": true,
       "run_at": "document_idle"
     }
   ]
