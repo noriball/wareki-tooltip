@@ -112,7 +112,7 @@ function warekiToSeireki(t, era, yearNum, month, day) {
   const value = month && year < GREGORIAN_ADOPTED_YEAR
     ? `${year}年`
     : `${year}年${suffix}${wd}`;
-  return { label: `${t}  →  ${value}（西暦）${note}`, value };
+  return { label: `${t}  →  ${value}${note}`, value };
 }
 
 /**
@@ -134,7 +134,7 @@ function seirekiToWareki(t, year, month, day) {
   const wd = weekdaySuffix(year, month, day);
   const parts = eras.map((e) => `${e.name}${eraYearText(year - e.start[0] + 1)}年`);
   const value = `${parts.join('／')}${suffix}${wd}`;
-  return { label: `${t}  →  ${value}（和暦）`, value };
+  return { label: `${t}  →  ${value}`, value };
 }
 
 const num = (s) => (s === undefined ? undefined : parseInt(s, 10));
