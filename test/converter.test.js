@@ -197,7 +197,7 @@ test('江戸期テーブルの整合性', async () => {
 });
 
 // ---------------- 出力書式（テンプレート） ----------------
-import { DEFAULT_SETTINGS, sanitizeSettings } from '../converter.js';
+import { DEFAULT_SETTINGS, sanitizeSettings, validateTemplate } from '../converter.js';
 const S = (tpl) => ({ seireki: { template: tpl } });   // 西暦で出力するとき（和暦→西暦）
 const Wr = (tpl, extra = {}) => ({ wareki: { template: tpl }, ...extra }); // 和暦で出力するとき（西暦→和暦）
 const f = (text, o) => convert(text, o)?.value;
@@ -210,83 +210,116 @@ test('既定値は従来どおりの出力', () => {
 });
 
 test('西暦出力: 区切り・0埋め', () => {
-  assert.equal(f('令和6年3月5日', S('YYYY/M/D')), '2024/3/5');
-  assert.equal(f('令和6年3月5日', S('YYYY.MM.DD')), '2024.03.05');
-  assert.equal(f('令和6年3月5日', S('YYYY-MM-DD')), '2024-03-05');
-  assert.equal(f('令和6年3月5日', S('YYYYMMDD')), '20240305');
-  assert.equal(f('令和6年3月5日', S('YYYY年MM月DD日')), '2024年03月05日');
-  assert.equal(f('令和6年3月5日', S("YYYY年M月D日 'JST'")), '2024年3月5日 JST');
+  assert.equal(f('令和6年3月5日', S(`{YYYY}/{M}/{D}`)), '2024/3/5');
+  assert.equal(f('令和6年3月5日', S(`{YYYY}.{MM}.{DD}`)), '2024.03.05');
+  assert.equal(f('令和6年3月5日', S(`{YYYY}-{MM}-{DD}`)), '2024-03-05');
+  assert.equal(f('令和6年3月5日', S(`{YYYY}{MM}{DD}`)), '20240305');
+  assert.equal(f('令和6年3月5日', S(`{YYYY}年{MM}月{DD}日`)), '2024年03月05日');
+  assert.equal(f('令和6年3月5日', S(`{YYYY}年{M}月{D}日 JST`)), '2024年3月5日 JST');
 });
 
 test('曜日: W と WW、書かなければ出ない、出せないときは括弧ごと消える', () => {
-  assert.equal(f('令和6年3月15日', S('YYYY/M/D(W)')), '2024/3/15(金)');
-  assert.equal(f('令和6年3月15日', S('YYYY年M月D日 WW')), '2024年3月15日 金曜日');
-  assert.equal(f('令和6年3月15日', S('YYYY年M月D日WW')), '2024年3月15日金曜日');
-  assert.equal(f('令和6年3月15日', S('YYYY/M/D')), '2024/3/15');          // W なし
-  assert.equal(f('令和6年3月', S('YYYY年M月D日（W）')), '2024年3月');       // 日がない
-  assert.equal(f('令和6年3月', S('YYYY/M/D(W)')), '2024/3');
-  assert.equal(f('令和6年', S('YYYY/M/D(W)')), '2024年');
-  assert.equal(f('明治5年3月10日', S('YYYY年M月D日（W）')), '1872年');      // 旧暦は曜日なし
+  assert.equal(f('令和6年3月15日', S(`{YYYY}/{M}/{D}({W})`)), '2024/3/15(金)');
+  assert.equal(f('令和6年3月15日', S(`{YYYY}年{M}月{D}日 {WW}`)), '2024年3月15日 金曜日');
+  assert.equal(f('令和6年3月15日', S(`{YYYY}年{M}月{D}日{WW}`)), '2024年3月15日金曜日');
+  assert.equal(f('令和6年3月15日', S(`{YYYY}/{M}/{D}`)), '2024/3/15');          // W なし
+  assert.equal(f('令和6年3月', S(`{YYYY}年{M}月{D}日（{W}）`)), '2024年3月');       // 日がない
+  assert.equal(f('令和6年3月', S(`{YYYY}/{M}/{D}({W})`)), '2024/3');
+  assert.equal(f('令和6年', S(`{YYYY}/{M}/{D}({W})`)), '2024年');
+  assert.equal(f('明治5年3月10日', S(`{YYYY}年{M}月{D}日（{W}）`)), '1872年');      // 旧暦は曜日なし
 });
 
 test('コピーに曜日を含めない（表示には含める）', () => {
-  const r = convert('令和6年3月15日', { seireki: { template: 'YYYY年M月D日（W）', copyWeekday: false } });
+  const r = convert('令和6年3月15日', { seireki: { template: '{YYYY}年{M}月{D}日（{W}）', copyWeekday: false } });
   assert.equal(r.value, '2024年3月15日');
   assert.match(r.label, /2024年3月15日（金）$/);
 });
 
 test('部分的な日付の省略（単位の「年」「月」だけ残る）', () => {
-  assert.equal(f('令和6年3月', S('YYYY年M月D日')), '2024年3月');
-  assert.equal(f('令和6年', S('YYYY年M月D日')), '2024年');
-  assert.equal(f('令和6年3月', S('YYYY-MM-DD')), '2024-03');
-  assert.equal(f('令和6年', S('YYYY-MM-DD')), '2024年');
-  assert.equal(f('令和6年3月15日', S('YYYY.M.D.')), '2024.3.15.');         // 末尾の文字は全部出るとき残す
+  assert.equal(f('令和6年3月', S(`{YYYY}年{M}月{D}日`)), '2024年3月');
+  assert.equal(f('令和6年', S(`{YYYY}年{M}月{D}日`)), '2024年');
+  assert.equal(f('令和6年3月', S(`{YYYY}-{MM}-{DD}`)), '2024-03');
+  assert.equal(f('令和6年', S(`{YYYY}-{MM}-{DD}`)), '2024年');
+  assert.equal(f('令和6年3月15日', S(`{YYYY}.{M}.{D}.`)), '2024.3.15.');         // 末尾の文字は全部出るとき残す
 });
 
 test('和暦出力: G/g/y/yy と元年', () => {
-  assert.equal(f('2024/3/15', Wr('Gy年M月D日')), '令和6年3月15日');
-  assert.equal(f('2024/3/15', Wr('Gy/M/D(W)')), '令和6/3/15(金)');
-  assert.equal(f('2024/3/15', Wr('gy.M.D')), 'R6.3.15');
-  assert.equal(f('2024/3/15', Wr('gyy.MM.DD')), 'R06.03.15');
-  assert.equal(f('2024/3/15', Wr('Gyy年MM月DD日')), '令和06年03月15日');
-  assert.equal(f('2024年', Wr('gy.M.D')), 'R6');                           // 略記の年のみに「年」は付けない
-  assert.equal(f('2019/5/1', Wr('Gy年M月D日（W）')), '令和元年5月1日（水）');
-  assert.equal(f('2019/5/1', Wr('Gy年M月D日', { gannen: false })), '令和1年5月1日');
-  assert.equal(f('2019/5/1', Wr('gy.M.D')), 'R1.5.1');                      // 略記では「元」にしない
+  assert.equal(f('2024/3/15', Wr(`{era}{eyear}年{M}月{D}日`)), '令和6年3月15日');
+  assert.equal(f('2024/3/15', Wr(`{era}{eyear}/{M}/{D}({W})`)), '令和6/3/15(金)');
+  assert.equal(f('2024/3/15', Wr(`{abbr}{eyear}.{M}.{D}`)), 'R6.3.15');
+  assert.equal(f('2024/3/15', Wr(`{abbr}{eyear2}.{MM}.{DD}`)), 'R06.03.15');
+  assert.equal(f('2024/3/15', Wr(`{era}{eyear2}年{MM}月{DD}日`)), '令和06年03月15日');
+  assert.equal(f('2024年', Wr(`{abbr}{eyear}.{M}.{D}`)), 'R6');                           // 略記の年のみに「年」は付けない
+  assert.equal(f('2019/5/1', Wr(`{era}{eyear}年{M}月{D}日（{W}）`)), '令和元年5月1日（水）');
+  assert.equal(f('2019/5/1', Wr(`{era}{eyear}年{M}月{D}日`, { gannen: false })), '令和1年5月1日');
+  assert.equal(f('2019/5/1', Wr(`{abbr}{eyear}.{M}.{D}`)), 'R1.5.1');                      // 略記では「元」にしない
 });
 
 test('和暦出力: 西暦併記や改元年の併記にも書式が効く', () => {
-  assert.equal(f('1989年', Wr('gy.M.D')), 'H1／S64');
-  assert.equal(f('1989/1/7', Wr('gy/M/D(W)')), 'S64/1/7(土)');
-  assert.equal(f('1989年1月', Wr('Gy年M月D日')), '平成元年1月／昭和64年1月');
-  assert.equal(f('1853年', Wr('gy.M.D')), '嘉永6年');                       // 江戸期は略記を持たない
-  assert.equal(f('1868年', Wr('gy.M.D')), 'M1／慶応4年');
-  assert.equal(f('2024/3/15', Wr('Gy年M月D日 (YYYY)')), '令和6年3月15日 (2024)');
+  assert.equal(f('1989年', Wr(`{abbr}{eyear}.{M}.{D}`)), 'H1／S64');
+  assert.equal(f('1989/1/7', Wr(`{abbr}{eyear}/{M}/{D}({W})`)), 'S64/1/7(土)');
+  assert.equal(f('1989年1月', Wr(`{era}{eyear}年{M}月{D}日`)), '平成元年1月／昭和64年1月');
+  assert.equal(f('1853年', Wr(`{abbr}{eyear}.{M}.{D}`)), '嘉永6年');                       // 江戸期は略記を持たない
+  assert.equal(f('1868年', Wr(`{abbr}{eyear}.{M}.{D}`)), 'M1／慶応4年');
+  assert.equal(f('2024/3/15', Wr(`{era}{eyear}年{M}月{D}日 ({YYYY})`)), '令和6年3月15日 (2024)');
 });
 
 test('西暦出力のテンプレートに元号トークンを書くと入力した元号が入る', () => {
-  assert.equal(f('令和6年3月15日', S('YYYY/M/D (Gy年)')), '2024/3/15 (令和6年)');
+  assert.equal(f('令和6年3月15日', S(`{YYYY}/{M}/{D} ({era}{eyear}年)`)), '2024/3/15 (令和6年)');
 });
 
 test('不正なテンプレート・設定値は既定値に戻る（保存値は信頼しない）', () => {
   assert.deepEqual(sanitizeSettings(null), DEFAULT_SETTINGS);
   assert.deepEqual(sanitizeSettings({ seireki: { template: 'abc' } }), DEFAULT_SETTINGS);          // 年トークンなし
   assert.deepEqual(sanitizeSettings({ seireki: { template: '' }, wareki: 5, gannen: 'x' }), DEFAULT_SETTINGS);
-  assert.deepEqual(sanitizeSettings({ seireki: { template: 'YYYY' + 'x'.repeat(50) } }), DEFAULT_SETTINGS);
-  assert.deepEqual(sanitizeSettings({ seireki: { template: 'YYYY\n' } }), DEFAULT_SETTINGS);      // 制御文字
-  assert.equal(sanitizeSettings({ seireki: { template: 'YYYY/M/D' } }).seireki.template, 'YYYY/M/D');
-  assert.equal(f('令和6年3月15日', S('abc')), '2024年3月15日（金）');
+  assert.deepEqual(sanitizeSettings({ seireki: { template: '{YYYY}' + 'x'.repeat(70) } }), DEFAULT_SETTINGS);
+  assert.deepEqual(sanitizeSettings({ seireki: { template: '{YYYY}\n' } }), DEFAULT_SETTINGS);      // 制御文字
+  assert.equal(sanitizeSettings({ seireki: { template: '{YYYY}/{M}/{D}' } }).seireki.template, '{YYYY}/{M}/{D}');
+  assert.equal(f('令和6年3月15日', S(`abc`)), '2024年3月15日（金）');
 });
 
 test('テンプレート指定のファジング: 例外を投げない', () => {
-  const chars = "YyGgMDW年月日/-.:()（）' 　";
+  const pieces = ['{YYYY}', '{era}', '{abbr}', '{eyear}', '{eyear2}', '{M}', '{MM}', '{D}', '{DD}', '{W}', '{WW}',
+    '年', '月', '日', '/', '.', '-', '(', ')', '（', '）', ' ', '{{', '}}', '{x}', '{', '}', 'JST'];
   let seed = 777;
   const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
   for (let i = 0; i < 3000; i++) {
     let tpl = '';
-    for (let j = 0, n = 1 + Math.floor(rnd() * 14); j < n; j++) tpl += chars[Math.floor(rnd() * chars.length)];
+    for (let j = 0, n = 1 + Math.floor(rnd() * 10); j < n; j++) tpl += pieces[Math.floor(rnd() * pieces.length)];
     for (const input of ['令和6年3月15日', '2024/3/5', '1989年', '嘉永6年', '平成31年4月']) {
       convert(input, { seireki: { template: tpl }, wareki: { template: tpl } });
     }
   }
+});
+
+test('トークンは大文字小文字を区別しない', () => {
+  assert.equal(f('令和6年3月5日', S('{yyyy}/{mm}/{dd}({w})')), '2024/03/05(火)');
+  assert.equal(f('令和6年3月5日', S('{Yyyy}-{M}-{D}')), '2024-3-5');
+  assert.equal(f('2024/3/5', Wr('{ERA}{EYEAR}年')), '令和6年');
+  assert.equal(f('2024/3/5', Wr('{Abbr}{eYear2}.{mm}.{dd}')), 'R06.03.05');
+  assert.equal(f('令和6年3月5日', S('{ YYYY }/{ M }')), '2024/3');  // 括弧内の空白は無視
+});
+
+test('括弧の外の文字はそのまま出力（英字も引用符なしで書ける）', () => {
+  assert.equal(f('令和6年3月5日', S('{YYYY}年{M}月{D}日 JST Day')), '2024年3月5日 JST Day');
+  assert.equal(f('令和6年3月5日', S('y{YYYY}m{MM}d{DD}')), 'y2024m03d05');
+  assert.equal(f('令和6年3月5日', S('{{{YYYY}}}')), '{2024}');          // {{ }} は文字としての括弧
+  assert.equal(f('令和6年3月5日', S('[{YYYY}/{MM}/{DD}]')), '[2024/03/05]');
+});
+
+test('テンプレートの検証と理由', () => {
+  assert.equal(validateTemplate('{YYYY}/{M}/{D}').ok, true);
+  assert.match(validateTemplate('{YYYY}/{foo}').error, /不明なトークン \{foo\}/);
+  assert.match(validateTemplate('{YYYY').error, /対応/);
+  assert.match(validateTemplate('YYYY}').error, /対応/);
+  assert.match(validateTemplate('abc').error, /年のトークン/);
+  assert.match(validateTemplate('{M}/{D}').error, /年のトークン/);
+  assert.match(validateTemplate('').error, /入力/);
+  assert.match(validateTemplate('{YYYY}' + 'x'.repeat(70)).error, /60文字/);
+  assert.equal(validateTemplate(null).ok, false);
+});
+
+test('不明なトークンを含む保存値は既定値に戻る', () => {
+  assert.deepEqual(sanitizeSettings({ seireki: { template: '{YYYY}/{foo}' } }), DEFAULT_SETTINGS);
+  assert.equal(f('令和6年3月15日', S('{YYYY}/{foo}')), '2024年3月15日（金）');
 });

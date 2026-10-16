@@ -82,44 +82,73 @@ function erasOverlapping(from, to) {
 
 /**
  * 出力書式の既定値。西暦で出力するとき(seireki)と和暦で出力するとき(wareki)で別々に持つ。
- *  template    : 書式テンプレート（下記トークン）
+ *  template    : 書式テンプレート（下記トークンを { } で囲んで書く）
  *  copyWeekday : コピーする文字列にも曜日を含めるか
  *  gannen      : 和暦の1年を「元年」と書くか（false なら「1年」）
  *
- * テンプレートのトークン（それ以外の文字はそのまま出力。'...' で囲むと文字そのもの）
- *  YYYY 西暦4桁 / G 元号(令和) / g 略記(R) / y 和暦の年(元年は「元」) / yy 和暦の年2桁
- *  M 月 / MM 月2桁 / D 日 / DD 日2桁 / W 曜日(金) / WW 曜日(金曜日)
+ * トークン（大文字小文字は区別しない）。{ } の外の文字はそのまま出力する。
+ *  {YYYY} 西暦4桁 / {era} 元号名(令和) / {abbr} 略記(R)
+ *  {eyear} 和暦の年(元年は「元」) / {eyear2} 和暦の年2桁
+ *  {M} {MM} 月・月2桁 / {D} {DD} 日・日2桁 / {W} {WW} 曜日(金)・曜日の名前(金曜日)
+ *  {{ と }} はそれぞれ { と } の文字そのもの
  */
 export const DEFAULT_SETTINGS = Object.freeze({
-  seireki: Object.freeze({ template: 'YYYY年M月D日（W）', copyWeekday: true }),
-  wareki: Object.freeze({ template: 'Gy年M月D日（W）', copyWeekday: true }),
+  seireki: Object.freeze({ template: '{YYYY}年{M}月{D}日（{W}）', copyWeekday: true }),
+  wareki: Object.freeze({ template: '{era}{eyear}年{M}月{D}日（{W}）', copyWeekday: true }),
   gannen: true,
 });
 
-const MAX_TEMPLATE_LENGTH = 40;
-const TOKEN_RE = /'([^']*)'|YYYY|yy|y|G|g|MM|M|DD|D|WW|W/g;
+const MAX_TEMPLATE_LENGTH = 60;
+/** テンプレート上の名前（小文字）→ 内部トークン */
+const TOKEN_NAMES = {
+  yyyy: 'YYYY', era: 'G', abbr: 'g', eyear: 'y', eyear2: 'yy',
+  m: 'M', mm: 'MM', d: 'D', dd: 'DD', w: 'W', ww: 'WW',
+};
 const YEAR_TOKENS = new Set(['YYYY', 'yy', 'y', 'G', 'g']);
 
-/** テンプレートを {lit} / {tok} の並びに分解する */
+/**
+ * テンプレートを {lit} / {tok} の並びに分解する。
+ * 不明なトークンや対応しない括弧があれば { error } を返す。
+ */
 function parseTemplate(tpl) {
   const items = [];
   let last = 0;
-  for (const m of tpl.matchAll(TOKEN_RE)) {
-    if (m.index > last) items.push({ lit: tpl.slice(last, m.index) });
-    if (m[0][0] === "'") items.push({ lit: m[1] === '' ? "'" : m[1] });
-    else items.push({ tok: m[0] });
+  const pushLit = (text) => {
+    if (!text) return;
+    const prev = items.at(-1);
+    if (prev && prev.lit !== undefined) prev.lit += text;
+    else items.push({ lit: text });
+  };
+  for (const m of tpl.matchAll(/\{\{|\}\}|\{([^{}]*)\}/g)) {
+    const between = tpl.slice(last, m.index);
+    if (/[{}]/.test(between)) return { error: '{ } の対応が取れていません（文字として使うときは {{ や }} と書きます）' };
+    pushLit(between);
+    if (m[0] === '{{') pushLit('{');
+    else if (m[0] === '}}') pushLit('}');
+    else {
+      const tok = TOKEN_NAMES[m[1].trim().toLowerCase()];
+      if (!tok) return { error: `不明なトークン {${m[1]}} があります` };
+      items.push({ tok });
+    }
     last = m.index + m[0].length;
   }
-  if (last < tpl.length) items.push({ lit: tpl.slice(last) });
-  return items;
+  const rest = tpl.slice(last);
+  if (/[{}]/.test(rest)) return { error: '{ } の対応が取れていません（文字として使うときは {{ や }} と書きます）' };
+  pushLit(rest);
+  return { items };
 }
 
-/** 使えるテンプレートか（文字列・長さ・制御文字なし・年のトークンを1つ以上含む） */
-function isValidTemplate(tpl) {
-  return typeof tpl === 'string'
-    && tpl.length >= 1 && tpl.length <= MAX_TEMPLATE_LENGTH
-    && !/[\u0000-\u001f\u007f]/.test(tpl)
-    && parseTemplate(tpl).some((it) => it.tok && YEAR_TOKENS.has(it.tok));
+/** テンプレートを検証する。使えなければ理由を返す */
+export function validateTemplate(tpl) {
+  if (typeof tpl !== 'string' || tpl.length < 1) return { ok: false, error: 'テンプレートを入力してください' };
+  if (tpl.length > MAX_TEMPLATE_LENGTH) return { ok: false, error: `${MAX_TEMPLATE_LENGTH}文字以内にしてください` };
+  if (/[\u0000-\u001f\u007f]/.test(tpl)) return { ok: false, error: '制御文字は使えません' };
+  const { items, error } = parseTemplate(tpl);
+  if (error) return { ok: false, error };
+  if (!items.some((it) => it.tok && YEAR_TOKENS.has(it.tok))) {
+    return { ok: false, error: '年のトークン（{YYYY} {era} {abbr} {eyear} {eyear2}）を1つ以上含めてください' };
+  }
+  return { ok: true };
 }
 
 /** 保存値などの信頼できない入力を、既定値で補いつつ許可された値だけに絞る */
@@ -129,7 +158,7 @@ export function sanitizeSettings(raw) {
   const dir = (k) => {
     const v = r[k] && typeof r[k] === 'object' ? r[k] : {};
     return {
-      template: isValidTemplate(v.template) ? v.template : d[k].template,
+      template: validateTemplate(v.template).ok ? v.template : d[k].template,
       copyWeekday: typeof v.copyWeekday === 'boolean' ? v.copyWeekday : d[k].copyWeekday,
     };
   };
@@ -225,7 +254,7 @@ function renderGroup(items, ctx, st) {
  * @param {string} weekday 曜日1文字。出せないときは空
  */
 function buildResult(t, cfg, st, ctxs, weekday) {
-  const { date, group } = splitWeekday(parseTemplate(cfg.template));
+  const { date, group } = splitWeekday(parseTemplate(cfg.template).items ?? []);
   const hasAlphaToken = date.some((it) => it.tok === 'g');
   // 略記(R6)になる元号だけ「年」を付けず「元」にもしない。略記を持たない江戸期の元号は元号名のまま
   const body = ctxs

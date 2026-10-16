@@ -1,11 +1,10 @@
-import { convert, DEFAULT_SETTINGS, sanitizeSettings } from './converter.js';
+import { convert, DEFAULT_SETTINGS, sanitizeSettings, validateTemplate } from './converter.js';
 
 const $ = (id) => document.getElementById(id);
 const SAMPLES = {
   seireki: ['令和6年3月5日', '平成31年4月', '昭和64年1月7日'],
   wareki: ['2024/3/5', '2019年5月', '1989年1月7日'],
 };
-const TPL_HELP = '年のトークン（YYYY, y, yy, G, g）を1つ以上含め、40文字以内にしてください';
 
 /** 画面の入力から設定を作る。テンプレートが不正な側は既定値になり、エラーを返す */
 function read() {
@@ -15,9 +14,10 @@ function read() {
     gannen: $('gannen').checked,
   };
   const st = sanitizeSettings(raw);
+  // 不正な側は理由（文字列）、正しければ null
   const invalid = {
-    seireki: st.seireki.template !== raw.seireki.template,
-    wareki: st.wareki.template !== raw.wareki.template,
+    seireki: validateTemplate(raw.seireki.template).error ?? null,
+    wareki: validateTemplate(raw.wareki.template).error ?? null,
   };
   return { st, invalid };
 }
@@ -32,8 +32,8 @@ function write(st) {
 
 function preview(st, invalid) {
   for (const dir of ['seireki', 'wareki']) {
-    $(`${dir}-err`).textContent = invalid[dir] ? TPL_HELP : '';
-    $(`${dir}-tpl`).setAttribute('aria-invalid', String(invalid[dir]));
+    $(`${dir}-err`).textContent = invalid[dir] ?? '';
+    $(`${dir}-tpl`).setAttribute('aria-invalid', String(Boolean(invalid[dir])));
     const box = $(`${dir}-prev`);
     box.textContent = '';
     for (const text of SAMPLES[dir]) {
@@ -79,6 +79,18 @@ for (const box of document.querySelectorAll('.presets')) {
     save();
   });
 }
+for (const box of document.querySelectorAll('.tokens')) {
+  box.addEventListener('click', (e) => {
+    const tok = e.target.dataset?.t;
+    if (!tok) return;
+    const input = $(box.dataset.target);
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.setRangeText(tok, start, end, 'end'); // カーソル位置に挿入
+    input.focus();
+    save();
+  });
+}
 $('reset').addEventListener('click', () => { write(DEFAULT_SETTINGS); save(); });
 
 (async () => {
@@ -88,5 +100,5 @@ $('reset').addEventListener('click', () => { write(DEFAULT_SETTINGS); save(); })
     st = sanitizeSettings(format);
   } catch { /* 既定値で表示 */ }
   write(st);
-  preview(st, { seireki: false, wareki: false });
+  preview(st, { seireki: null, wareki: null });
 })();
