@@ -1,61 +1,85 @@
 import { convert, DEFAULT_SETTINGS, sanitizeSettings } from './converter.js';
 
-const $ = (sel) => document.querySelector(sel);
-const SAMPLES = ['令和6年3月5日', '2024/3/5', '1989年1月7日'];
+const $ = (id) => document.getElementById(id);
+const SAMPLES = {
+  seireki: ['令和6年3月5日', '平成31年4月', '昭和64年1月7日'],
+  wareki: ['2024/3/5', '2019年5月', '1989年1月7日'],
+};
+const TPL_HELP = '年のトークン（YYYY, y, yy, G, g）を1つ以上含め、40文字以内にしてください';
 
+/** 画面の入力から設定を作る。テンプレートが不正な側は既定値になり、エラーを返す */
 function read() {
-  const get = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value;
-  const chk = (name) => document.querySelector(`input[name="${name}"]`).checked;
-  return sanitizeSettings({
-    sep: get('sep'),
-    pad: chk('pad'),
-    weekday: get('weekday'),
-    copyWeekday: chk('copyWeekday'),
-    warekiStyle: get('warekiStyle'),
-    gannen: chk('gannen'),
-  });
+  const raw = {
+    seireki: { template: $('seireki-tpl').value, copyWeekday: $('seireki-copy').checked },
+    wareki: { template: $('wareki-tpl').value, copyWeekday: $('wareki-copy').checked },
+    gannen: $('gannen').checked,
+  };
+  const st = sanitizeSettings(raw);
+  const invalid = {
+    seireki: st.seireki.template !== raw.seireki.template,
+    wareki: st.wareki.template !== raw.wareki.template,
+  };
+  return { st, invalid };
 }
 
 function write(st) {
-  for (const k of ['sep', 'weekday', 'warekiStyle']) {
-    const el = document.querySelector(`input[name="${k}"][value="${st[k]}"]`);
-    if (el) el.checked = true;
-  }
-  for (const k of ['pad', 'copyWeekday', 'gannen']) {
-    document.querySelector(`input[name="${k}"]`).checked = st[k];
-  }
+  $('seireki-tpl').value = st.seireki.template;
+  $('seireki-copy').checked = st.seireki.copyWeekday;
+  $('wareki-tpl').value = st.wareki.template;
+  $('wareki-copy').checked = st.wareki.copyWeekday;
+  $('gannen').checked = st.gannen;
 }
 
-function preview(st) {
-  SAMPLES.forEach((text, i) => {
-    const r = convert(text, st);
-    const el = $(`#p${i + 1}`);
-    el.textContent = '';
-    const a = document.createElement('span');
-    a.className = 'in';
-    a.textContent = `${text}  →  `;
-    const b = document.createElement('span');
-    b.textContent = r?.value ?? '';
-    el.append(a, b);
-  });
+function preview(st, invalid) {
+  for (const dir of ['seireki', 'wareki']) {
+    $(`${dir}-err`).textContent = invalid[dir] ? TPL_HELP : '';
+    $(`${dir}-tpl`).setAttribute('aria-invalid', String(invalid[dir]));
+    const box = $(`${dir}-prev`);
+    box.textContent = '';
+    for (const text of SAMPLES[dir]) {
+      const r = convert(text, st);
+      const line = document.createElement('div');
+      const a = document.createElement('span');
+      a.className = 'in';
+      a.textContent = `${text}  →  `;
+      const b = document.createElement('span');
+      b.textContent = r?.value ?? '';
+      line.append(a, b);
+      box.append(line);
+    }
+  }
 }
 
 let statusTimer;
-async function save() {
-  const st = read();
-  preview(st);
-  try {
-    await chrome.storage.sync.set({ format: st });
-    $('#status').textContent = '保存しました';
-  } catch {
-    $('#status').textContent = '保存に失敗しました';
-  }
+function flash(msg) {
+  $('status').textContent = msg;
   clearTimeout(statusTimer);
-  statusTimer = setTimeout(() => { $('#status').textContent = ''; }, 1500);
+  statusTimer = setTimeout(() => { $('status').textContent = ''; }, 1500);
 }
 
+async function save() {
+  const { st, invalid } = read();
+  preview(st, invalid);
+  if (invalid.seireki || invalid.wareki) return; // 不正なテンプレートは保存しない
+  try {
+    await chrome.storage.sync.set({ format: st });
+    flash('保存しました');
+  } catch {
+    flash('保存に失敗しました');
+  }
+}
+
+document.addEventListener('input', save);
 document.addEventListener('change', save);
-$('#reset').addEventListener('click', () => { write(DEFAULT_SETTINGS); save(); });
+for (const box of document.querySelectorAll('.presets')) {
+  box.addEventListener('click', (e) => {
+    const v = e.target.dataset?.v;
+    if (!v) return;
+    $(box.dataset.target).value = v;
+    save();
+  });
+}
+$('reset').addEventListener('click', () => { write(DEFAULT_SETTINGS); save(); });
 
 (async () => {
   let st = DEFAULT_SETTINGS;
@@ -64,5 +88,5 @@ $('#reset').addEventListener('click', () => { write(DEFAULT_SETTINGS); save(); }
     st = sanitizeSettings(format);
   } catch { /* 既定値で表示 */ }
   write(st);
-  preview(st);
+  preview(st, { seireki: false, wareki: false });
 })();

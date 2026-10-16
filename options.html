@@ -4,66 +4,93 @@
 <title>和暦⇔西暦 変換 - 出力書式</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: light dark; --line: #8884; --accent: #22386e; }
-  body { font: 15px/1.7 system-ui, "Hiragino Sans", "Yu Gothic", sans-serif; max-width: 640px; margin: 32px auto; padding: 0 20px; }
+  :root { color-scheme: light dark; --line: #8884; }
+  body { font: 15px/1.7 system-ui, "Hiragino Sans", "Yu Gothic", sans-serif; max-width: 680px; margin: 32px auto; padding: 0 20px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   p.lead { margin: 0 0 24px; opacity: .75; }
-  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 16px; padding: 12px 16px 14px; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 18px; padding: 12px 16px 14px; }
   legend { font-weight: 600; padding: 0 6px; }
-  label { display: inline-block; margin: 2px 16px 2px 0; white-space: nowrap; }
-  .note { font-size: 13px; opacity: .7; margin: 6px 0 0; }
-  .preview { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 20px 0; }
-  .preview h2 { font-size: 14px; margin: 0 0 6px; opacity: .75; }
-  .preview div { font-variant-numeric: tabular-nums; padding: 2px 0; }
-  .preview .in { opacity: .6; }
+  .sub { font-size: 13px; opacity: .7; margin: 0 0 8px; }
+  input[type="text"] { font: 16px ui-monospace, "SF Mono", Menlo, Consolas, monospace; width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  input[type="text"][aria-invalid="true"] { border-color: #c33; }
+  .presets { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  button { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+  button.reset { font-size: 15px; padding: 6px 14px; }
+  .err { color: #c33; font-size: 13px; min-height: 1.4em; }
+  label.chk { display: block; margin-top: 4px; }
+  .preview { margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: #8882; font-variant-numeric: tabular-nums; }
+  .preview div { padding: 1px 0; }
+  .in { opacity: .6; }
+  details { border: 1px solid var(--line); border-radius: 8px; padding: 8px 16px; margin: 0 0 18px; }
+  summary { cursor: pointer; font-weight: 600; }
+  table { border-collapse: collapse; margin: 8px 0; font-size: 14px; width: 100%; }
+  td, th { text-align: left; padding: 2px 10px 2px 0; vertical-align: top; }
+  th { opacity: .7; font-weight: 600; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: #8882; padding: 0 4px; border-radius: 3px; }
   .row { display: flex; align-items: center; gap: 12px; }
-  button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
   #status { font-size: 13px; opacity: .7; }
 </style>
 <body>
   <h1>出力書式</h1>
-  <p class="lead">変換結果の表示とコピーに使う書式です。変更はすぐ保存されます。</p>
+  <p class="lead">変換結果の表示とコピーに使う書式です。書式テンプレートを自由に書けます。変更はすぐ保存されます。</p>
 
   <fieldset>
-    <legend>区切り文字</legend>
-    <label><input type="radio" name="sep" value="kanji"> 年月日（2024年3月15日）</label>
-    <label><input type="radio" name="sep" value="slash"> スラッシュ（2024/3/15）</label>
-    <label><input type="radio" name="sep" value="dot"> ドット（2024.3.15）</label>
-    <label><input type="radio" name="sep" value="hyphen"> ハイフン（2024-3-15）</label>
-    <label><input type="radio" name="sep" value="none"> なし（20240315）</label>
-    <p class="note">「なし」は月日が常に2桁になります。年だけの結果は「2024年」のままです。</p>
+    <legend>西暦で出力するとき（和暦 → 西暦）</legend>
+    <p class="sub">例: 令和6年3月5日 を変換した結果</p>
+    <input type="text" id="seireki-tpl" spellcheck="false" autocomplete="off" aria-label="西暦出力のテンプレート" maxlength="40">
+    <div class="err" id="seireki-err" role="alert"></div>
+    <div class="presets" data-target="seireki-tpl">
+      <button type="button" data-v="YYYY年M月D日（W）">2024年3月5日（火）</button>
+      <button type="button" data-v="YYYY/M/D">2024/3/5</button>
+      <button type="button" data-v="YYYY/MM/DD">2024/03/05</button>
+      <button type="button" data-v="YYYY.M.D">2024.3.5</button>
+      <button type="button" data-v="YYYY-MM-DD">2024-03-05</button>
+      <button type="button" data-v="YYYYMMDD">20240305</button>
+      <button type="button" data-v="YYYY/M/D(W)">2024/3/5(火)</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="seireki-copy"> コピーする文字列に曜日を含める</label>
+    <div class="preview" id="seireki-prev" aria-live="polite"></div>
   </fieldset>
 
   <fieldset>
-    <legend>0埋め</legend>
-    <label><input type="checkbox" name="pad"> 月日を2桁にする（3月5日 → 03月05日）</label>
+    <legend>和暦で出力するとき（西暦 → 和暦）</legend>
+    <p class="sub">例: 2024/3/5 を変換した結果</p>
+    <input type="text" id="wareki-tpl" spellcheck="false" autocomplete="off" aria-label="和暦出力のテンプレート" maxlength="40">
+    <div class="err" id="wareki-err" role="alert"></div>
+    <div class="presets" data-target="wareki-tpl">
+      <button type="button" data-v="Gy年M月D日（W）">令和6年3月5日（火）</button>
+      <button type="button" data-v="Gy/M/D">令和6/3/5</button>
+      <button type="button" data-v="gy.M.D">R6.3.5</button>
+      <button type="button" data-v="gy.MM.DD">R6.03.05</button>
+      <button type="button" data-v="Gyy年MM月DD日">令和06年03月05日</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="wareki-copy"> コピーする文字列に曜日を含める</label>
+    <label class="chk"><input type="checkbox" id="gannen"> 1年を「元年」と書く（令和元年 / 令和1年。略記 R1 では常に「1」）</label>
+    <div class="preview" id="wareki-prev" aria-live="polite"></div>
   </fieldset>
 
-  <fieldset>
-    <legend>曜日</legend>
-    <label><input type="radio" name="weekday" value="paren-full"> （金）</label>
-    <label><input type="radio" name="weekday" value="paren-half"> (金)</label>
-    <label><input type="radio" name="weekday" value="full"> 金曜日</label>
-    <label><input type="radio" name="weekday" value="none"> 表示しない</label>
-    <div><label><input type="checkbox" name="copyWeekday"> コピーする文字列にも曜日を含める</label></div>
-    <p class="note">曜日は年月日がそろっているときだけ付きます。明治5年以前（旧暦）には付きません。</p>
-  </fieldset>
-
-  <fieldset>
-    <legend>和暦の書式</legend>
-    <label><input type="radio" name="warekiStyle" value="long"> 令和6年</label>
-    <label><input type="radio" name="warekiStyle" value="alpha"> 略記 R6</label>
-    <div><label><input type="checkbox" name="gannen"> 1年を「元年」と書く（令和元年 / 令和1年）</label></div>
-    <p class="note">略記の月日は「R6.3.15」のようにドット区切りになります（区切りで変更可）。江戸期の元号は略記にならず、そのまま表示します。</p>
-  </fieldset>
-
-  <div class="preview" aria-live="polite">
-    <h2>プレビュー</h2>
-    <div id="p1"></div><div id="p2"></div><div id="p3"></div>
-  </div>
+  <details>
+    <summary>テンプレートの書き方</summary>
+    <table>
+      <tr><th>書く文字</th><th>出力</th></tr>
+      <tr><td><code>YYYY</code></td><td>西暦4桁（2024）</td></tr>
+      <tr><td><code>G</code> / <code>g</code></td><td>元号（令和） / 略記（R）</td></tr>
+      <tr><td><code>y</code> / <code>yy</code></td><td>和暦の年（6、元年は「元」） / 2桁（06）</td></tr>
+      <tr><td><code>M</code> / <code>MM</code></td><td>月（3） / 2桁（03）</td></tr>
+      <tr><td><code>D</code> / <code>DD</code></td><td>日（5） / 2桁（05）</td></tr>
+      <tr><td><code>W</code> / <code>WW</code></td><td>曜日（金） / 曜日の名前（金曜日）</td></tr>
+      <tr><td><code>'…'</code></td><td>囲んだ文字をそのまま出力（<code>'JST'</code>、<code>''</code> で ' ）</td></tr>
+    </table>
+    <p class="sub">
+      それ以外の文字（<code>/</code> <code>.</code> <code>年</code> <code>（</code> など）はそのまま出力します。
+      年・月・日の順に書いてください。年を1つ以上含める必要があります（40文字まで）。<br>
+      日まで入力していないときは、<code>YYYY/M/D</code> なら <code>2024/3</code>、<code>YYYY年M月D日</code> なら <code>2024年3月</code> のように、無い部分と区切りが省かれます。
+      曜日が出せないとき（日まで無い・明治5年以前の旧暦）は、<code>（W）</code> の括弧ごと消えます。
+    </p>
+  </details>
 
   <div class="row">
-    <button id="reset" type="button">初期設定に戻す</button>
+    <button id="reset" class="reset" type="button">初期設定に戻す</button>
     <span id="status"></span>
   </div>
   <script type="module" src="options.js"></script>

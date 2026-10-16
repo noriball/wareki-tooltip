@@ -77,93 +77,167 @@ function erasOverlapping(from, to) {
 }
 
 // ============================================================
-//  出力書式の設定
+//  出力書式（テンプレート）
 // ============================================================
 
 /**
- * 出力書式の既定値。
- *  sep         : 'kanji'(年月日) | 'slash' | 'dot' | 'hyphen' | 'none'(区切りなし 20240315)
- *  pad         : 月日を2桁に（3 → 03）。sep='none' のときは常に2桁
- *  weekday     : 'none' | 'paren-full'（金） | 'paren-half'(金) | 'full' 金曜日
- *  copyWeekday : コピーする値にも曜日を含めるか
- *  warekiStyle : 'long'(令和6年) | 'alpha'(R6)。江戸期の元号は常に long
- *  gannen      : 1年を「元年」と書くか（false なら「1年」）
+ * 出力書式の既定値。西暦で出力するとき(seireki)と和暦で出力するとき(wareki)で別々に持つ。
+ *  template    : 書式テンプレート（下記トークン）
+ *  copyWeekday : コピーする文字列にも曜日を含めるか
+ *  gannen      : 和暦の1年を「元年」と書くか（false なら「1年」）
+ *
+ * テンプレートのトークン（それ以外の文字はそのまま出力。'...' で囲むと文字そのもの）
+ *  YYYY 西暦4桁 / G 元号(令和) / g 略記(R) / y 和暦の年(元年は「元」) / yy 和暦の年2桁
+ *  M 月 / MM 月2桁 / D 日 / DD 日2桁 / W 曜日(金) / WW 曜日(金曜日)
  */
 export const DEFAULT_SETTINGS = Object.freeze({
-  sep: 'kanji',
-  pad: false,
-  weekday: 'paren-full',
-  copyWeekday: true,
-  warekiStyle: 'long',
+  seireki: Object.freeze({ template: 'YYYY年M月D日（W）', copyWeekday: true }),
+  wareki: Object.freeze({ template: 'Gy年M月D日（W）', copyWeekday: true }),
   gannen: true,
 });
 
-const ALLOWED = {
-  sep: ['kanji', 'slash', 'dot', 'hyphen', 'none'],
-  weekday: ['none', 'paren-full', 'paren-half', 'full'],
-  warekiStyle: ['long', 'alpha'],
-};
+const MAX_TEMPLATE_LENGTH = 40;
+const TOKEN_RE = /'([^']*)'|YYYY|yy|y|G|g|MM|M|DD|D|WW|W/g;
+const YEAR_TOKENS = new Set(['YYYY', 'yy', 'y', 'G', 'g']);
+
+/** テンプレートを {lit} / {tok} の並びに分解する */
+function parseTemplate(tpl) {
+  const items = [];
+  let last = 0;
+  for (const m of tpl.matchAll(TOKEN_RE)) {
+    if (m.index > last) items.push({ lit: tpl.slice(last, m.index) });
+    if (m[0][0] === "'") items.push({ lit: m[1] === '' ? "'" : m[1] });
+    else items.push({ tok: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < tpl.length) items.push({ lit: tpl.slice(last) });
+  return items;
+}
+
+/** 使えるテンプレートか（文字列・長さ・制御文字なし・年のトークンを1つ以上含む） */
+function isValidTemplate(tpl) {
+  return typeof tpl === 'string'
+    && tpl.length >= 1 && tpl.length <= MAX_TEMPLATE_LENGTH
+    && !/[\u0000-\u001f\u007f]/.test(tpl)
+    && parseTemplate(tpl).some((it) => it.tok && YEAR_TOKENS.has(it.tok));
+}
 
 /** 保存値などの信頼できない入力を、既定値で補いつつ許可された値だけに絞る */
 export function sanitizeSettings(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const d = DEFAULT_SETTINGS;
-  const pick = (k) => (ALLOWED[k].includes(r[k]) ? r[k] : d[k]);
-  const bool = (k) => (typeof r[k] === 'boolean' ? r[k] : d[k]);
+  const dir = (k) => {
+    const v = r[k] && typeof r[k] === 'object' ? r[k] : {};
+    return {
+      template: isValidTemplate(v.template) ? v.template : d[k].template,
+      copyWeekday: typeof v.copyWeekday === 'boolean' ? v.copyWeekday : d[k].copyWeekday,
+    };
+  };
   return {
-    sep: pick('sep'),
-    pad: bool('pad'),
-    weekday: pick('weekday'),
-    copyWeekday: bool('copyWeekday'),
-    warekiStyle: pick('warekiStyle'),
-    gannen: bool('gannen'),
+    seireki: dir('seireki'),
+    wareki: dir('wareki'),
+    gannen: typeof r.gannen === 'boolean' ? r.gannen : d.gannen,
   };
 }
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
-/** 元号年のラベル（年の数字まで。「年」は付けない）。略記 R6 は alpha を持つ元号のみ */
-function eraYearLabel(era, n, st) {
-  if (st.warekiStyle === 'alpha' && era.alpha) return { text: `${era.alpha}${n}`, alpha: true };
-  if (st.sep === 'none') return { text: `${era.name}${pad2(n)}`, alpha: false };
-  return { text: `${era.name}${n === 1 && st.gannen ? '元' : n}`, alpha: false };
+/**
+ * 曜日の部分を日付の部分から切り離す。
+ * 最初の W より後ろ（と、W 直前の「年月日以外の文字」＝（ や空白）を曜日グループとし、
+ * 曜日が出せないときはグループごと消す。直前の「日」などはそのまま日付側に残す。
+ */
+function splitWeekday(items) {
+  const idx = items.findIndex((it) => it.tok === 'W' || it.tok === 'WW');
+  if (idx < 0) return { date: items, group: [] };
+  const date = items.slice(0, idx);
+  const group = items.slice(idx);
+  const prev = date.at(-1);
+  if (prev && prev.lit !== undefined) {
+    const [, units, rest] = prev.lit.match(/^([年月日]*)([\s\S]*)$/);
+    date.pop();
+    if (units) date.push({ lit: units });
+    if (rest) group.unshift({ lit: rest });
+  }
+  return { date, group };
+}
+
+function tokenText(tok, ctx, st) {
+  switch (tok) {
+    case 'YYYY': return String(ctx.year).padStart(4, '0');
+    case 'G': return ctx.era ? ctx.era.name : '';
+    case 'g': return ctx.era ? (ctx.era.alpha ?? ctx.era.name) : '';
+    case 'y':
+      if (!ctx.era) return '';
+      return ctx.eraYear === 1 && st.gannen && !ctx.alphaTemplate ? '元' : String(ctx.eraYear);
+    case 'yy': return ctx.era ? pad2(ctx.eraYear) : '';
+    case 'M': return ctx.month ? String(ctx.month) : '';
+    case 'MM': return ctx.month ? pad2(ctx.month) : '';
+    case 'D': return ctx.day ? String(ctx.day) : '';
+    case 'DD': return ctx.day ? pad2(ctx.day) : '';
+    case 'W': return ctx.weekday ?? '';
+    case 'WW': return ctx.weekday ? `${ctx.weekday}曜日` : '';
+    default: return '';
+  }
+}
+
+const isYearTok = (it) => it.tok && YEAR_TOKENS.has(it.tok);
+const isMonthTok = (it) => it.tok === 'M' || it.tok === 'MM';
+const isDayTok = (it) => it.tok === 'D' || it.tok === 'DD';
+
+/**
+ * 日付の部分を描画する。月・日が無いときは、無い部分と、その区切りを省く
+ * （2024/3/15 → 年のみは「2024年」、年月は「2024/3」）。
+ * 年 → 月 → 日 の順に書くテンプレートを想定する。
+ */
+function renderDate(items, ctx, st) {
+  const present = (it) => isYearTok(it) || (isMonthTok(it) && ctx.month) || (isDayTok(it) && ctx.day);
+  const isComponent = (it) => isYearTok(it) || isMonthTok(it) || isDayTok(it);
+  let last = -1;
+  let lastComponent = -1;
+  items.forEach((it, i) => {
+    if (present(it)) last = i;
+    if (isComponent(it)) lastComponent = i;
+  });
+  if (last < 0) return '';
+
+  const upto = last === lastComponent ? items.length : last + 1; // 最後の要素まで出せるなら末尾の文字も出す
+  let out = '';
+  for (let i = 0; i < upto; i++) out += items[i].lit ?? tokenText(items[i].tok, ctx, st);
+
+  if (last !== lastComponent) {
+    // 省略した部分の手前に「月」「年」などの単位だけが残っているときは付ける
+    const next = items[last + 1];
+    if (next && next.lit !== undefined && /^[年月日]+$/.test(next.lit)) out += next.lit;
+    else if (isYearTok(items[last]) && !ctx.alphaTemplate) out += '年'; // 年のみ → 「2024年」「令和6年」
+  }
+  return out;
+}
+
+function renderGroup(items, ctx, st) {
+  if (!ctx.weekday) return '';
+  return items.map((it) => it.lit ?? tokenText(it.tok, ctx, st)).join('');
 }
 
 /**
- * 年・月・日を書式に従って文字列にする。
- * @param {{text:string, alpha:boolean}} year 年のラベル（西暦なら 2024）
+ * 結果を組み立てる。曜日グループは全元号の後ろに1回だけ付ける。
+ * @param {object[]} ctxs 日付の文脈（改元年は元号ごとに複数）
+ * @param {string} weekday 曜日1文字。出せないときは空
  */
-function composeDate(year, month, day, st) {
-  const yearOnly = year.alpha ? year.text : `${year.text}年`;
-  if (!month) return yearOnly;
-
-  let sep = st.sep;
-  // 略記(R6)に「年月日」は不自然なので「.」で区切る
-  if (year.alpha && sep === 'kanji') sep = 'dot';
-  const padded = st.pad || sep === 'none';
-  const m = padded ? pad2(month) : String(month);
-  const d = day ? (padded ? pad2(day) : String(day)) : null;
-
-  if (sep === 'kanji') return `${year.text}年${m}月${d ? `${d}日` : ''}`;
-  if (sep === 'none') return `${year.text}${m}${d ?? ''}`;
-  const c = sep === 'slash' ? '/' : sep === 'dot' ? '.' : '-';
-  return `${year.text}${c}${m}${d ? `${c}${d}` : ''}`;
+function buildResult(t, cfg, st, ctxs, weekday) {
+  const { date, group } = splitWeekday(parseTemplate(cfg.template));
+  const hasAlphaToken = date.some((it) => it.tok === 'g');
+  // 略記(R6)になる元号だけ「年」を付けず「元」にもしない。略記を持たない江戸期の元号は元号名のまま
+  const body = ctxs
+    .map((c) => renderDate(date, { ...c, alphaTemplate: hasAlphaToken && !!c.era?.alpha }, st))
+    .join('／');
+  const wd = renderGroup(group, { weekday }, st);
+  return { label: `${t}  →  ${body}${wd}`, value: cfg.copyWeekday ? `${body}${wd}` : body };
 }
 
-/** 曜日の文字列。日付まで無い・旧暦時代・設定が「なし」なら空 */
-function weekdayText(y, m, d, st) {
-  if (!m || !d || st.weekday === 'none') return '';
-  const w = weekdayOf(y, m, d);
-  if (!w) return '';
-  if (st.weekday === 'paren-full') return `（${w}）`;
-  if (st.weekday === 'paren-half') return `(${w})`;
-  return `${w}曜日`;
-}
-
-/** 表示用(label)とコピー用(value)を組み立てる。曜日はコピー用だけ外せる */
-function result(t, body, weekday, st) {
-  const label = `${t}  →  ${body}${weekday}`;
-  return { label, value: st.copyWeekday ? `${body}${weekday}` : body };
+/** 曜日1文字。年月日がそろっていて、旧暦時代(〜1872)でなければ。無ければ '' */
+function weekdayChar(y, m, d) {
+  return m && d ? (weekdayOf(y, m, d) ?? '') : '';
 }
 
 /**
@@ -176,7 +250,7 @@ function warekiToSeireki(t, era, yearNum, month, day, st) {
     if (yearNum < 1 || yearNum > era.lastYear) {
       return { error: `${era.name}は元年〜${era.lastYear}年です` };
     }
-    return oldCalendarResult(t, era.firstYear + yearNum - 1, month, day, st);
+    return oldCalendarResult(t, era, yearNum, era.firstYear + yearNum - 1, month, day, st);
   }
 
   const last = eraLastYear(era);
@@ -186,7 +260,7 @@ function warekiToSeireki(t, era, yearNum, month, day, st) {
   const year = era.start[0] + yearNum - 1;
 
   // 明治1〜5年も旧暦
-  if (year < GREGORIAN_ADOPTED_YEAR) return oldCalendarResult(t, year, month, day, st);
+  if (year < GREGORIAN_ADOPTED_YEAR) return oldCalendarResult(t, era, yearNum, year, month, day, st);
 
   if (month) {
     if (month < 1 || month > 12) return { error: `${month}月は存在しません` };
@@ -206,15 +280,15 @@ function warekiToSeireki(t, era, yearNum, month, day, st) {
     }
   }
 
-  const body = composeDate({ text: String(year), alpha: false }, month, day, st);
-  return result(t, body, weekdayText(year, month, day, st), st);
+  return buildResult(t, st.seireki, st, [{ year, month, day, era, eraYear: yearNum }], weekdayChar(year, month, day));
 }
 
 /** 旧暦時代の和暦 → 西暦。年のみ換算（月日は旧暦のため換算しない） */
-function oldCalendarResult(t, year, month, day, st) {
+function oldCalendarResult(t, era, yearNum, year, month, day, st) {
   if (month && (month < 1 || month > 12)) return { error: `${month}月は存在しません` };
   if (day && (day < 1 || day > 30)) return { error: `${day}日は存在しません` };
-  const body = `${year}年`;
+  // 年のみ換算（月日・曜日は付けない）。書式のテンプレートは年の部分だけが効く
+  const body = buildResult(t, st.seireki, st, [{ year, era, eraYear: yearNum }], '').value;
   const note = month
     ? '（旧暦のため年のみ換算・月日は換算せず）'
     : '（旧暦の年。西暦では翌年1〜2月にかかる場合あり）';
@@ -238,23 +312,24 @@ function seirekiToWareki(t, year, month, day, st) {
   const eras = erasOverlapping(from, to);
   if (eras.length === 0) return null;
 
-  const parts = eras.map((e) =>
-    composeDate(eraYearLabel(e, year - e.start[0] + 1, st), month, day, st));
-  return result(t, parts.join('／'), weekdayText(year, month, day, st), st);
+  const ctxs = eras.map((e) => ({ year, month, day, era: e, eraYear: year - e.start[0] + 1 }));
+  return buildResult(t, st.wareki, st, ctxs, weekdayChar(year, month, day));
 }
 
 /** 西暦年(〜1872)に当たる旧暦時代の元号を新しい順に */
 function oldEraResult(t, year, month, day, st) {
-  const parts = [];
-  const yearOnly = (e, n) => composeDate(eraYearLabel(e, n, st), null, null, st);
-  if (year >= MEIJI_FIRST_YEAR) parts.push(yearOnly(eraByName('明治'), year - MEIJI_FIRST_YEAR + 1));
+  const ctxs = [];
+  if (year >= MEIJI_FIRST_YEAR) {
+    ctxs.push({ year, era: eraByName('明治'), eraYear: year - MEIJI_FIRST_YEAR + 1 });
+  }
   for (const e of [...EDO_ERAS].reverse()) {
     if (year >= e.firstYear && year <= e.firstYear + e.lastYear - 1) {
-      parts.push(yearOnly(e, year - e.firstYear + 1));
+      ctxs.push({ year, era: e, eraYear: year - e.firstYear + 1 });
     }
   }
-  if (parts.length === 0) return null; // 慶長より前は対象外
-  const value = parts.join('／');
+  if (ctxs.length === 0) return null; // 慶長より前は対象外
+  // 年のみ換算（月日・曜日は付けない）。書式のテンプレートは年の部分だけが効く
+  const value = buildResult(t, st.wareki, st, ctxs, '').value;
   const note = month
     ? '（旧暦のため年のみ換算・月日は換算せず）'
     : '（旧暦の年。月によっては前後の元号になる場合あり）';
