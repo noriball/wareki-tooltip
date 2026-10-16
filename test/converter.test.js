@@ -70,8 +70,8 @@ test('西暦→和暦 改元年は併記、日付があれば確定', () => {
 test('西暦→和暦 不正な日付と範囲外', () => {
   assert.ok(err('2024年2月30日'));
   assert.ok(err('2024年13月'));
-  assert.equal(convert('1800年'), null);
-  assert.equal(convert('1868年1月1日'), null);
+  assert.equal(v('1800年'), '寛政12年');
+  assert.equal(convert('1595年'), null); // 慶長元年(1596)より前は対象外
 });
 
 test('うるう年', () => {
@@ -134,4 +134,64 @@ test('ファジング: 例外を投げない・出力にHTML特殊文字を含�
     const r = convert(s);
     if (r && r.value) assert.doesNotMatch(r.value, /[<>&"']/);
   }
+});
+
+test('漢数字（位取り・十進・廿卅）', () => {
+  assert.equal(v('令和六年三月十五日'), '2024年3月15日（金）');
+  assert.equal(v('二〇二四年三月十五日'), '令和6年3月15日（金）');
+  assert.equal(v('昭和二十年八月十五日'), '1945年8月15日（水）');
+  assert.equal(v('平成三十一年'), '2019年');
+  assert.equal(v('令和十二年'), '2030年');
+  assert.equal(v('大正十五年十二月二十四日'), '1926年12月24日（金）');
+  assert.equal(v('明治廿五年'), '1892年');
+  assert.equal(v('明治卅年'), '1897年');
+  assert.equal(v('令和元年五月一日'), '2019年5月1日（水）');
+  assert.equal(convert('昭和百年'), null); // 百は未対応
+  assert.ok(err('昭和七十年'));
+});
+
+test('江戸期 和暦→西暦（年のみ・旧暦）', () => {
+  assert.equal(v('嘉永6年'), '1853年');
+  assert.equal(v('嘉永六年'), '1853年');
+  assert.equal(v('慶長元年'), '1596年');
+  assert.equal(v('慶応4年'), '1868年');
+  assert.equal(v('寛政12年'), '1800年');
+  assert.equal(v('天保15年'), '1844年');
+  assert.equal(v('安政7年'), '1860年');
+  assert.equal(v('万延2年'), '1861年');
+  assert.equal(v('元治2年'), '1865年');
+  assert.match(convert('嘉永6年6月3日').label, /月日は換算せず/);
+  assert.equal(v('嘉永6年6月3日'), '1853年'); // 月日・曜日は付かない
+});
+
+test('江戸期 範囲外・不正値を拒否', () => {
+  assert.ok(err('慶長21年'));
+  assert.ok(err('弘化6年'));
+  assert.ok(err('元治3年'));
+  assert.ok(err('嘉永0年'));
+  assert.ok(err('嘉永6年13月'));
+  assert.ok(err('嘉永6年6月31日'));
+});
+
+test('西暦→和暦 江戸期（改元年は併記）', () => {
+  assert.equal(v('1853年'), '嘉永6年');
+  assert.equal(v('1615年'), '元和元年／慶長20年');
+  assert.equal(v('1844年'), '弘化元年／天保15年');
+  assert.equal(v('1864年'), '元治元年／文久4年');
+  assert.equal(v('1865年'), '慶応元年／元治2年');
+  assert.equal(v('1868年'), '明治元年／慶応4年');
+  assert.equal(v('1853/7/8'), '嘉永6年'); // 月日は換算せず
+  assert.equal(v('1596年'), '慶長元年');
+  assert.equal(convert('1595年'), null);
+});
+
+test('江戸期テーブルの整合性', async () => {
+  const { EDO_ERAS } = await import('../converter.js');
+  assert.equal(EDO_ERAS.length, 36);
+  for (let i = 1; i < EDO_ERAS.length; i++) {
+    // 前の元号の最終年 = 次の元号の元年（改元年は重なる）
+    assert.equal(EDO_ERAS[i - 1].firstYear + EDO_ERAS[i - 1].lastYear - 1, EDO_ERAS[i].firstYear);
+  }
+  const last = EDO_ERAS.at(-1);
+  assert.equal(last.firstYear + last.lastYear - 1, 1868); // 慶応4年 = 明治元年
 });

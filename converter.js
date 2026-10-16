@@ -14,6 +14,27 @@ export const ERAS = [
   { name: '明治', kanji: '明', alpha: 'M', start: [1868, 1, 25],  end: [1912, 7, 29] },
 ];
 
+/**
+ * 江戸時代の元号（旧暦）。元年に当たる西暦年のみ持つ（一般的な年表の表記）。
+ * 旧暦は西暦と月日が一致しないため、年のみ換算する。
+ * 最終年は「次の元号の元年 − 元年 + 1」（改元年は両方の元号に属する）。
+ */
+const EDO_RAW = [
+  ['慶長', 1596], ['元和', 1615], ['寛永', 1624], ['正保', 1644], ['慶安', 1648],
+  ['承応', 1652], ['明暦', 1655], ['万治', 1658], ['寛文', 1661], ['延宝', 1673],
+  ['天和', 1681], ['貞享', 1684], ['元禄', 1688], ['宝永', 1704], ['正徳', 1711],
+  ['享保', 1716], ['元文', 1736], ['寛保', 1741], ['延享', 1744], ['寛延', 1748],
+  ['宝暦', 1751], ['明和', 1764], ['安永', 1772], ['天明', 1781], ['寛政', 1789],
+  ['享和', 1801], ['文化', 1804], ['文政', 1818], ['天保', 1830], ['弘化', 1844],
+  ['嘉永', 1848], ['安政', 1854], ['万延', 1860], ['文久', 1861], ['元治', 1864],
+  ['慶応', 1865],
+];
+const MEIJI_FIRST_YEAR = 1868;
+export const EDO_ERAS = EDO_RAW.map(([name, firstYear], i) => {
+  const next = i + 1 < EDO_RAW.length ? EDO_RAW[i + 1][1] : MEIJI_FIRST_YEAR;
+  return { name, firstYear, lastYear: next - firstYear + 1, old: true };
+});
+
 /** 明治6年(1873)の改暦より前は旧暦。月日は西暦と一致しない */
 const GREGORIAN_ADOPTED_YEAR = 1873;
 
@@ -22,7 +43,7 @@ const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 // [y, m, d] を比較可能な数値に
 const key = ([y, m, d]) => y * 10000 + m * 100 + d;
 
-const eraByName = (name) => ERAS.find((e) => e.name === name);
+const eraByName = (name) => ERAS.find((e) => e.name === name) ?? EDO_ERAS.find((e) => e.name === name);
 const eraByKanji = (c) => ERAS.find((e) => e.kanji === c);
 const eraByAlpha = (c) => ERAS.find((e) => e.alpha === c.toUpperCase());
 
@@ -77,11 +98,22 @@ function weekdaySuffix(y, m, d) {
  * @returns {{label:string,value:string}|{error:string}}
  */
 function warekiToSeireki(t, era, yearNum, month, day) {
+  // 江戸期（旧暦のみ）: 年だけ換算し、月日は換算しない
+  if (era.old) {
+    if (yearNum < 1 || yearNum > era.lastYear) {
+      return { error: `${era.name}は元年〜${era.lastYear}年です` };
+    }
+    return oldCalendarResult(t, era.firstYear + yearNum - 1, month, day);
+  }
+
   const last = eraLastYear(era);
   if (yearNum < 1 || (last && yearNum > last)) {
     return { error: last ? `${era.name}は元年〜${last}年です` : `${era.name}${yearNum}年は指定できません` };
   }
   const year = era.start[0] + yearNum - 1;
+
+  // 明治1〜5年も旧暦
+  if (year < GREGORIAN_ADOPTED_YEAR) return oldCalendarResult(t, year, month, day);
 
   if (month) {
     if (month < 1 || month > 12) return { error: `${month}月は存在しません` };
@@ -101,17 +133,18 @@ function warekiToSeireki(t, era, yearNum, month, day) {
     }
   }
 
-  const suffix = buildSuffix(month, day);
-  let wd = '';
-  let note = '';
-  if (month && year < GREGORIAN_ADOPTED_YEAR) {
-    note = '（旧暦のため月日は換算せず）';
-  } else {
-    wd = weekdaySuffix(year, month, day);
-  }
-  const value = month && year < GREGORIAN_ADOPTED_YEAR
-    ? `${year}年`
-    : `${year}年${suffix}${wd}`;
+  const value = `${year}年${buildSuffix(month, day)}${weekdaySuffix(year, month, day)}`;
+  return { label: `${t}  →  ${value}`, value };
+}
+
+/** 旧暦時代の和暦 → 西暦。年のみ換算（月日は旧暦のため換算しない） */
+function oldCalendarResult(t, year, month, day) {
+  if (month && (month < 1 || month > 12)) return { error: `${month}月は存在しません` };
+  if (day && (day < 1 || day > 30)) return { error: `${day}日は存在しません` };
+  const value = `${year}年`;
+  const note = month
+    ? '（旧暦のため年のみ換算・月日は換算せず）'
+    : '（旧暦の年。西暦では翌年1〜2月にかかる場合あり）';
   return { label: `${t}  →  ${value}${note}`, value };
 }
 
@@ -124,9 +157,11 @@ function seirekiToWareki(t, year, month, day) {
   if (day && !isValidDate(year, month, day)) {
     return { error: `${year}年${month}月${day}日は存在しません` };
   }
+  // 旧暦時代（慶長元年〜明治5年）: 年のみ換算。改元年は両方の元号を併記
+  if (year < GREGORIAN_ADOPTED_YEAR) return oldEraResult(t, year, month, day);
+
   const from = [year, month || 1, day || 1];
   const to = [year, month || 12, day || daysInMonth(year, month || 12)];
-  // 明治元年(1868-01-25)より前は対象外。年のみで 1868 は明治元年として扱う
   const eras = erasOverlapping(from, to);
   if (eras.length === 0) return null;
 
@@ -137,13 +172,56 @@ function seirekiToWareki(t, year, month, day) {
   return { label: `${t}  →  ${value}`, value };
 }
 
+/** 西暦年(〜1872)に当たる旧暦時代の元号を新しい順に */
+function oldEraResult(t, year, month, day) {
+  const parts = [];
+  if (year >= MEIJI_FIRST_YEAR) parts.push(`明治${eraYearText(year - MEIJI_FIRST_YEAR + 1)}年`);
+  for (const e of [...EDO_ERAS].reverse()) {
+    if (year >= e.firstYear && year <= e.firstYear + e.lastYear - 1) {
+      parts.push(`${e.name}${eraYearText(year - e.firstYear + 1)}年`);
+    }
+  }
+  if (parts.length === 0) return null; // 慶長より前は対象外
+  const value = parts.join('／');
+  const note = month
+    ? '（旧暦のため年のみ換算・月日は換算せず）'
+    : '（旧暦の年。月によっては前後の元号になる場合あり）';
+  return { label: `${t}  →  ${value}${note}`, value };
+}
+
 /**
  * 全角英数・全角記号を半角に、㋿㍻㍼㍽㍾ を元号名に、各種ダッシュをハイフンに揃える。
  * （NFKC で 2024→2024、Ｒ６→R6、／→/、．→.、㋿→令和 などになる）
  */
 function normalize(s) {
-  return s.normalize('NFKC').replace(/[\u2010-\u2015\u2212\uFF0D\u30FC]/g, '-');
+  return s
+    .normalize('NFKC')
+    .replace(/[\u2010-\u2015\u2212\uFF0D\u30FC]/g, '-')
+    .replace(/[〇零一二三四五六七八九十廿卅]+/g, kanjiNumeralToArabic);
 }
+
+const KANJI_DIGIT = { 〇: 0, 零: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+
+/**
+ * 漢数字の連なりを算用数字に。位取り(二〇二四→2024)と十進(二十五→25)、廿・卅に対応。
+ * 解釈できない並びは元のまま返す。
+ */
+function kanjiNumeralToArabic(run) {
+  if (!/[十廿卅]/.test(run)) {
+    return [...run].map((c) => KANJI_DIGIT[c]).join(''); // 位取り: 二〇二四 → 2024
+  }
+  let m;
+  if ((m = run.match(/^([二三四五六七八九]?)十([一二三四五六七八九]?)$/))) {
+    return String((m[1] ? KANJI_DIGIT[m[1]] : 1) * 10 + (m[2] ? KANJI_DIGIT[m[2]] : 0));
+  }
+  if ((m = run.match(/^廿([一二三四五六七八九]?)$/))) return String(20 + (m[1] ? KANJI_DIGIT[m[1]] : 0));
+  if ((m = run.match(/^卅([一二三四五六七八九]?)$/))) return String(30 + (m[1] ? KANJI_DIGIT[m[1]] : 0));
+  return run;
+}
+
+const ERA_NAME_RE = new RegExp(
+  `^(${[...ERAS, ...EDO_ERAS].map((e) => e.name).join('|')})(元|\\d{1,2})(?:年(?:(\\d{1,2})月(?:(\\d{1,2})日)?)?)?$`,
+);
 
 const num = (s) => (s === undefined ? undefined : parseInt(s, 10));
 
@@ -160,7 +238,7 @@ export function convert(text) {
   let m;
 
   // 漢字: 令和6年 / 令和6年3月 / 令和6年3月15日 / 令和元年 / 令和6
-  m = t.match(/^(令和|平成|昭和|大正|明治)(元|\d{1,2})(?:年(?:(\d{1,2})月(?:(\d{1,2})日)?)?)?$/);
+  m = t.match(ERA_NAME_RE);
   if (m) {
     const y = m[2] === '元' ? 1 : num(m[2]);
     return warekiToSeireki(orig, eraByName(m[1]), y, num(m[3]), num(m[4]));

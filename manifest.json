@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "和暦⇔西暦 変換",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "和暦・西暦の日付を選択すると、変換結果と曜日をその場でツールチップ表示。クリックでコピー。改元年は両方の元号を併記。",
   "permissions": [],
   "background": {
