@@ -59,7 +59,7 @@ test('西暦→和暦 改元年は併記、日付があれば確定', () => {
   assert.equal(v('2019年'), '令和元年／平成31年');
   assert.equal(v('1926年'), '昭和元年／大正15年');
   assert.equal(v('1912年'), '大正元年／明治45年');
-  assert.equal(v('1989年1月'), '平成元年／昭和64年1月');
+  assert.equal(v('1989年1月'), '平成元年1月／昭和64年1月');
   assert.equal(v('1989年1月7日'), '昭和64年1月7日（土）');
   assert.equal(v('1989年1月8日'), '平成元年1月8日（日）');
   assert.equal(v('2019年4月30日'), '平成31年4月30日（火）');
@@ -194,4 +194,65 @@ test('江戸期テーブルの整合性', async () => {
   }
   const last = EDO_ERAS.at(-1);
   assert.equal(last.firstYear + last.lastYear - 1, 1868); // 慶応4年 = 明治元年
+});
+
+// ---------------- 出力書式 ----------------
+import { DEFAULT_SETTINGS, sanitizeSettings } from '../converter.js';
+const f = (s, o) => convert(s, o)?.value;
+
+test('既定値は従来どおりの出力', () => {
+  assert.equal(f('令和6年3月15日', {}), '2024年3月15日（金）');
+  assert.equal(f('令和6年3月15日', DEFAULT_SETTINGS), '2024年3月15日（金）');
+  assert.equal(f('令和6年3月15日'), '2024年3月15日（金）');
+});
+
+test('区切り文字: スラッシュ・ドット・ハイフン・なし', () => {
+  assert.equal(f('令和6年3月15日', { sep: 'slash' }), '2024/3/15（金）');
+  assert.equal(f('令和6年3月15日', { sep: 'dot' }), '2024.3.15（金）');
+  assert.equal(f('令和6年3月15日', { sep: 'hyphen' }), '2024-3-15（金）');
+  assert.equal(f('令和6年3月15日', { sep: 'none' }), '20240315（金）'); // なしは常に2桁
+  assert.equal(f('令和6年3月', { sep: 'slash' }), '2024/3');
+  assert.equal(f('令和6年', { sep: 'slash' }), '2024年'); // 年のみは区切りなし
+});
+
+test('0埋め', () => {
+  assert.equal(f('令和6年3月5日', { pad: true }), '2024年03月05日（火）');
+  assert.equal(f('令和6年3月5日', { pad: true, sep: 'slash' }), '2024/03/05（火）');
+  assert.equal(f('令和6年3月5日', { pad: false, sep: 'slash' }), '2024/3/5（火）');
+  assert.equal(f('令和6年3月5日', { sep: 'none' }), '20240305（火）');
+});
+
+test('曜日の表示形式とコピー', () => {
+  assert.equal(f('令和6年3月15日', { weekday: 'none' }), '2024年3月15日');
+  assert.equal(f('令和6年3月15日', { weekday: 'paren-half' }), '2024年3月15日(金)');
+  assert.equal(f('令和6年3月15日', { weekday: 'full' }), '2024年3月15日金曜日');
+  const r = convert('令和6年3月15日', { weekday: 'paren-full', copyWeekday: false });
+  assert.equal(r.value, '2024年3月15日');           // コピーには曜日なし
+  assert.match(r.label, /2024年3月15日（金）$/);    // 表示には曜日あり
+  assert.equal(f('令和6年3月', { weekday: 'full' }), '2024年3月'); // 日がなければ曜日なし
+});
+
+test('和暦の出力書式: 長い表記・略記・元年', () => {
+  assert.equal(f('2024/3/15', { sep: 'slash' }), '令和6/3/15（金）');
+  assert.equal(f('2024/3/15', { sep: 'dot', pad: true }), '令和6.03.15（金）');
+  assert.equal(f('2024/3/15', { warekiStyle: 'alpha' }), 'R6.3.15（金）'); // 略記は年月日→ドット
+  assert.equal(f('2024/3/15', { warekiStyle: 'alpha', sep: 'slash' }), 'R6/3/15（金）');
+  assert.equal(f('2024年', { warekiStyle: 'alpha' }), 'R6');
+  assert.equal(f('2019/5/1', { gannen: false }), '令和1年5月1日（水）');
+  assert.equal(f('2019/5/1'), '令和元年5月1日（水）');
+  assert.equal(f('2024/3/15', { sep: 'none' }), '令和06' + '0315（金）');
+});
+
+test('改元年の併記にも書式が効く／江戸期は略記にならない', () => {
+  assert.equal(f('1989年', { warekiStyle: 'alpha' }), 'H1／S64');
+  assert.equal(f('1989/1/7', { warekiStyle: 'alpha', sep: 'slash' }), 'S64/1/7（土）');
+  assert.equal(f('1853年', { warekiStyle: 'alpha' }), '嘉永6年');
+  assert.equal(f('1868年', { warekiStyle: 'alpha' }), 'M1／慶応4年');
+});
+
+test('不正な設定値は既定値に戻る（保存値は信頼しない）', () => {
+  assert.deepEqual(sanitizeSettings(null), DEFAULT_SETTINGS);
+  assert.deepEqual(sanitizeSettings({ sep: '<script>', pad: 'yes', weekday: 1 }), DEFAULT_SETTINGS);
+  assert.equal(f('令和6年3月15日', { sep: 'bogus' }), '2024年3月15日（金）');
+  assert.deepEqual(sanitizeSettings({ sep: 'dot', pad: true }), { ...DEFAULT_SETTINGS, sep: 'dot', pad: true });
 });
