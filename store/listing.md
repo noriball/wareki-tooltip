@@ -54,7 +54,7 @@
 
 ## 画像
 - アイコン: icons/icon128.png（拡張機能パッケージに同梱）
-- スクリーンショット（1280×800）: store/screenshot-1.png 〜 screenshot-3.png
+- スクリーンショット（1280×800）: store/screenshot-1.png 〜 screenshot-4.png（4枚目は書式設定画面）
 - 小さいプロモ画像（440×280）: store/promo-440x280.png
 - マーキープロモ画像（1400×560、任意）: store/marquee-1400x560.png
 
