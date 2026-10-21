@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "和暦⇔西暦 変換",
+  "name": "暦変換tooltip",
   "version": "3.2.0",
   "description": "和暦・西暦の日付を選択すると、変換結果と曜日をその場でツールチップ表示。クリックでコピー。出力書式（区切り・0埋め・曜日）も設定可。",
   "permissions": [
